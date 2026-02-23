@@ -1,0 +1,91 @@
+name: Build and Release ChromiumOS Flatpak
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            wget unzip flatpak flatpak-builder \
+            libglib2.0-dev elfutils
+
+      - name: Install Freedesktop Platform runtime
+        run: |
+          flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Platform//24.08
+
+      - name: Run build script
+        run: |
+          chmod +x ./build-chromiumos-flatpak.sh
+          ./build-chromiumos-flatpak.sh
+        env:
+          HOME: /home/runner
+
+      - name: Read version
+        id: version
+        run: |
+          BUCKET_BASE="https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_ChromiumOS_Full"
+          REVISION=$(wget -qO- "$BUCKET_BASE/LAST_CHANGE" | tr -d '[:space:]')
+          CHROME_BIN=$(find chromiumos-flatpak-build/chromium-extracted -name "chrome" -type f | head -n 1)
+          VERSION=$("$CHROME_BIN" --product-version --no-sandbox 2>/dev/null | tr -d '[:space:]' || true)
+          if [[ -z "$VERSION" ]]; then
+            VERSION=$(date +%Y%m%d)
+          fi
+          if [[ -n "$REVISION" && "$REVISION" =~ ^[0-9]+$ ]]; then
+            FULL_VERSION="${VERSION}-r${REVISION}"
+          else
+            FULL_VERSION="$VERSION"
+          fi
+          echo "version=$FULL_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
+          if [[ "$STATUS" == "200" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release and upload Flatpak
+        if: steps.check_release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: ChromiumOS ${{ steps.version.outputs.version }}
+          body: |
+            Unofficial Flatpak of the ChromiumOS for Linux builds.
+
+            **Version:** `${{ steps.version.outputs.version }}`
+            **Built:** ${{ github.run_id }}
+
+            ### install
+            ```
+            flatpak install ChromiumOS.flatpak
+            ```
+            or
+            ```
+            flatpak install --user ChromiumOS.flatpak
+            ```
+          files: chromiumos-flatpak-build/ChromiumOS.flatpak
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip message
+        if: steps.check_release.outputs.exists == 'true'
+        run: echo "release v${{ steps.version.outputs.version }} already exists, skipping"
