@@ -7,6 +7,11 @@ on:
         description: 'Chromium snapshot revision number (leave empty for latest)'
         required: false
         default: ''
+      make_latest:
+        description: 'Mark this release as latest on GitHub'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build:
@@ -42,7 +47,6 @@ jobs:
         run: |
           BUCKET_BASE="https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_ChromiumOS_Full"
 
-          # Use the manually specified revision if provided, otherwise fetch latest
           if [[ -n "${{ github.event.inputs.revision }}" && "${{ github.event.inputs.revision }}" =~ ^[0-9]+$ ]]; then
             REVISION="${{ github.event.inputs.revision }}"
           else
@@ -60,6 +64,7 @@ jobs:
             FULL_VERSION="$VERSION"
           fi
           echo "version=$FULL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
 
       - name: Check if release already exists
         id: check_release
@@ -86,6 +91,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: ChromiumOS ${{ steps.version.outputs.version }} Flatpak
+          make_latest: ${{ github.event.inputs.make_latest }}
           body: |
             Unofficial Flatpak of the ChromiumOS for Linux builds.
             **Version:** `${{ steps.version.outputs.version }}`
