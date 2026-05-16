@@ -21,7 +21,10 @@ done
 echo "downloading chromiumos"
 BUCKET_BASE="https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_ChromiumOS_Full"
 
-if [[ -f "$REVISION_FILE" ]]; then
+if [[ -n "$CHROMIUM_REVISION" && "$CHROMIUM_REVISION" =~ ^[0-9]+$ ]]; then
+  SNAPSHOT_REVISION="$CHROMIUM_REVISION"
+  echo "using manually specified revision: $SNAPSHOT_REVISION"
+elif [[ -f "$REVISION_FILE" ]]; then
   SNAPSHOT_REVISION=$(cat "$REVISION_FILE" | tr -d '[:space:]')
   echo "using cached revision: $SNAPSHOT_REVISION"
 else
@@ -233,7 +236,7 @@ echo ""
 FULL_VERSION="${CHROME_VERSION}-r${SNAPSHOT_REVISION}"
 echo "done. chromiumos $FULL_VERSION installed."
 echo "run with: flatpak run $APP_ID"
-echo "" > /dev/null  # version: $FULL_VERSION
+echo "" > /dev/null
 
 echo "bundling .flatpak (this takes a while)"
 REPO_PATH="${HOME}/.local/share/flatpak/repo"
