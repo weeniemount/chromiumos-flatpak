@@ -2,13 +2,17 @@ name: Build and Release ChromiumOS Flatpak
 
 on:
   workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Chromium snapshot revision number (leave empty for latest)'
+        required: false
+        default: ''
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,12 +35,20 @@ jobs:
           ./build-chromiumos-flatpak.sh
         env:
           HOME: /home/runner
+          CHROMIUM_REVISION: ${{ github.event.inputs.revision }}
 
       - name: Read version
         id: version
         run: |
           BUCKET_BASE="https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_ChromiumOS_Full"
-          REVISION=$(wget -qO- "$BUCKET_BASE/LAST_CHANGE" | tr -d '[:space:]')
+
+          # Use the manually specified revision if provided, otherwise fetch latest
+          if [[ -n "${{ github.event.inputs.revision }}" && "${{ github.event.inputs.revision }}" =~ ^[0-9]+$ ]]; then
+            REVISION="${{ github.event.inputs.revision }}"
+          else
+            REVISION=$(wget -qO- "$BUCKET_BASE/LAST_CHANGE" | tr -d '[:space:]')
+          fi
+
           CHROME_BIN=$(find chromiumos-flatpak-build/chromium-extracted -name "chrome" -type f | head -n 1)
           VERSION=$("$CHROME_BIN" --product-version --no-sandbox 2>/dev/null | tr -d '[:space:]' || true)
           if [[ -z "$VERSION" ]]; then
@@ -67,6 +79,7 @@ jobs:
         run: |
           mv chromiumos-flatpak-build/ChromiumOS.flatpak \
              chromiumos-flatpak-build/ChromiumOS-${{ steps.version.outputs.version }}.flatpak
+
       - name: Create release and upload Flatpak
         if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -75,9 +88,9 @@ jobs:
           name: ChromiumOS ${{ steps.version.outputs.version }} Flatpak
           body: |
             Unofficial Flatpak of the ChromiumOS for Linux builds.
-
             **Version:** `${{ steps.version.outputs.version }}`
             **Built:** ${{ github.run_id }}
+            ${{ github.event.inputs.revision != '' && format('**Pinned revision:** `{0}`', github.event.inputs.revision) || '**Revision:** latest' }}
 
             ### install
             ```
